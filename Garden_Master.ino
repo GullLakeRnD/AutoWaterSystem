@@ -9,11 +9,7 @@
 #include <Wire.h>
 #include "RTClib.h"
 
-// Change these values if you're using the 4x20 LCD
-#define ROWS 4
-#define COLS 20
-
-ParallaxLCD lcd(2,ROWS,COLS); // desired pin, rows, cols
+ParallaxLCD lcd(2,4,20); // desired pin, rows, cols
 
 RTC_DS1307 RTC;
 const int chipSelect = 10;
@@ -46,16 +42,19 @@ int Light = 0;
 float Soil = 0.0;
 float Air = 0.0;
 
-int minMoisture = 50;
-int coolDown = 0;
-bool waterOn = false;
-long lowCounter = 0;
-bool lowWater = false;
+int lowMoisture = 50;
+int highMoisture = 300;
+bool Valve = LOW;
+int moistureLedColor = 0;
+const int valvePin = 4;
 
 int Red = 3;
-int Green = 7;
-int Blue = 8;
+int Green = 6;
+int Blue = 9;
 int index = 0;
+int ledMode = 1;
+int lastMoistureLedColor = 0;
+int lastLedMode = 0;
 const int WHITE = 0;
 const int BLACK = 1;
 const int RED = 2;
@@ -64,6 +63,20 @@ const int BLUE = 4;
 const int CYAN = 5;
 const int YELLOW = 6;
 const int MAGENTA = 7;
+const int Party = 0;
+const int Working = 1;
+const int Off = 2;
+
+
+//Timing
+const int secondInterval = 1000;
+const int hundredthInterval = 100;
+const int tenthInterval = 10;
+long prevMillisParty = 0;
+long prevMillisLogAndLCD = 0;
+long prevMillisUpdateSens = 0;
+long prevMillisCheckMoisture = 0;
+long prevMillisRegularLED = 0;
 
 void setup () {
   //Serial.begin(9600);
@@ -111,24 +124,44 @@ void setup () {
 
 void loop () {
   //Serial.println("Loop Running");
+  if (millis() - prevMillisUpdateSens >= hundredthInterval) {
+   UpdateSensVal();
+  }
+  if (millis() - prevMillisLogAndLCD >= secondInterval) {
+   UpdateLogAndLCD();
+  }
+  if (millis() - prevMillisCheckMoisture >= hundredthInterval) {
+   checkMoisture();
+  }
+  if (ledMode == Party and millis() - prevMillisParty >= secondInterval) {
+   party();
+  }
+  if (ledMode == Working and moistureLedColor != lastMoistureLedColor) {
+  	regularLED();
+  }
+  if (ledMode == Off and ledMode != lastLedMode) {
+  	ledOff();
+  }
+}
+
+void UpdateLogAndLCD() {
+
   DateTime now;
    now = RTC.now();
-
-   updateSensVal();
-   UpdateLCD();
-   checkMoisture();
-   runLed();
-   
-/*
-  if (waterOn==true) {
-    digitalWrite(4, HIGH);
-  }
-  else {
-    digitalWrite(4, LOW);
-  }
-*/
-
-  //
+  lcd.empty();
+  lcd.pos(0,0);
+  lcd.print("Moisture:");
+  lcd.print(Moisture);
+  lcd.pos(1,0);
+  lcd.print("Temp (soil):");
+  lcd.print(Soil);
+  lcd.pos(2,0);
+  lcd.print("Temp (air):");
+  lcd.print(Air);
+  lcd.pos(3,0);
+  lcd.print("Light:");
+  lcd.print(Light);
+  
   
   logfile.print(Entry);
   logfile.print(", ");
@@ -163,27 +196,7 @@ void loop () {
   
   
   logfile.flush();
-  long M = millis();
-  delay(1000-(M%1000));
   Entry++;
-}
-
-void UpdateLCD() {
-  lcd.empty();
-  lcd.pos(0,0);
-  lcd.print("Moisture:");
-  lcd.print(Moisture);
-  lcd.pos(1,0);
-  lcd.print("Temp (soil):");
-  lcd.print(Soil);
-  //lcd.print(analogRead(temperature));
-  lcd.pos(2,0);
-  lcd.print("Temp (air):");
-  lcd.print(Air);
-  //lcd.print(analogRead(airTemp));
-  lcd.pos(3,0);
-  lcd.print("Light:");
-  lcd.print(Light);
 }
 
 void updateSensVal() {
@@ -194,42 +207,32 @@ void updateSensVal() {
 }
 
 void checkMoisture() {
-  if (waterOn == true) {
-    waterOn = false;
+  lastMoistureLedColor = moistureLedColor;
+  lastValve = Valve;
+  if (Moisture >= lowMoisture and Moisture <= highMoisture) {
+  	Valve = LOW;
+  	moistureLedColor = GREEN;
   }
-  if (coolDown == 0) {
-    if (Moisture <= minMoisture) {
-      waterOn = true;
-      coolDown == 10;
-    }
+  else if (Moisture < lowMoisture) {
+  	Valve = HIGH;
+  	moistureLedColor = RED;
   }
-  else {
-    coolDown--;
+  else if (Moisture > highMoisture) {
+  	Valve = LOW;
+  	moistureLedColor = BLUE;
   }
-  if (Moisture <= minMoisture) {
-    lowCounter++;
-  }
-  else {
-    lowCounter = 0;
-  }
-  if (lowCounter >= 1000) {
-    lowWater = true;
-  }
-  else {
-    lowWater = false;
-  }
-  if (lowWater == true) {
-    //notify with an indicator
+  if (Valve != lastValve) {
+  	digitalWrite(valvePin, Valve);
   }
 }
 
-void runLed() {
-	int pattern[] = {RED, GREEN, BLUE, CYAN, MAGENTA, YELLOW, WHITE, BLACK};
+void party() {
+	int pattern[] = {RED, GREEN, BLUE, CYAN, MAGENTA, YELLOW, WHITE};
 	index++;
-	int color = pattern[index];
 	if (index >= (sizeof(pattern)/sizeof(int))-1) {
 		index = 0;
 	}
+	int color = pattern[index];
 	switch(color) {
 		case WHITE:
 		digitalWrite(Red, HIGH);
@@ -288,3 +291,67 @@ void runLed() {
 	}
 }
 
+void regularLED() {
+	switch(moistureLedColor) {
+		case WHITE:
+		digitalWrite(Red, HIGH);
+		digitalWrite(Green, HIGH);
+		digitalWrite(Blue, HIGH);
+		
+		break;
+		case BLACK:
+		digitalWrite(Red, LOW);
+		digitalWrite(Green, LOW);
+		digitalWrite(Blue, LOW);
+		
+		break;
+		case RED:
+		digitalWrite(Red, HIGH);
+		digitalWrite(Green, LOW);
+		digitalWrite(Blue, LOW);
+		
+		break;
+		case BLUE:
+		digitalWrite(Red, LOW);
+		digitalWrite(Green, LOW);
+		digitalWrite(Blue, HIGH);
+		
+		break;
+		case GREEN:
+		digitalWrite(Red, LOW);
+		digitalWrite(Green, HIGH);
+		digitalWrite(Blue, LOW);
+		
+		break;
+		case YELLOW:
+		digitalWrite(Red, LOW);
+		digitalWrite(Green, HIGH);
+		digitalWrite(Blue, HIGH);
+		
+		break;
+		case CYAN:
+		digitalWrite(Red, HIGH);
+		digitalWrite(Green, HIGH);
+		digitalWrite(Blue, LOW);
+		
+		break;
+		case MAGENTA:
+		digitalWrite(Red, HIGH);
+		digitalWrite(Green, LOW);
+		digitalWrite(Blue, HIGH);
+		
+		break;
+		default:
+		digitalWrite(Red, LOW);
+		digitalWrite(Green, LOW);
+		digitalWrite(Blue, LOW);
+		
+		break;
+	}
+}
+
+void ledOff() {
+	digitalWrite(Red, LOW);
+	digitalWrite(Green, LOW);
+	digitalWrite(Blue, LOW);
+}
