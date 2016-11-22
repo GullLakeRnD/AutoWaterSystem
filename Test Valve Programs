@@ -1,0 +1,37 @@
+int Valvepin = 4;
+
+void setup() {
+  pinMode(Valvepin, OUTPUT);
+}
+
+void loop() {
+  digitalWrite(Valvepin, HIGH);
+  delay(1000);
+  digitalWrite(Valvepin, LOW);
+  delay(1000);
+}
+
+
+
+
+int Valvepin = 4;
+int buttonPin = 5;
+
+void setup() {
+  pinMode(Valvepin, OUTPUT);
+  pinMode(buttonPin, INPUT);
+}
+
+void loop() {
+  if (digitalRead(buttonPin) == HIGH) {
+  digitalWrite(Valvepin, HIGH);
+  }
+  else {
+  digitalWrite(Valvepin, LOW);
+  }
+  delay(10);
+}
+
+
+
+
